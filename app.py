@@ -1,0 +1,47 @@
+# save as app.py
+import streamlit as st
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+import matplotlib.pyplot as plt
+
+st.set_page_config(page_title="Retail Forecasts & Transfers", layout="wide")
+st.title("Customer Demand Forecasts & Warehouse Optimisation")
+
+# --- Mock inputs (in production, query BigQuery and Vertex Endpoint) ---
+stores = [f"Store {i}" for i in range(1, 21)]
+products = [f"Product {i}" for i in range(1, 21)]
+
+col1, col2, col3 = st.columns(3)
+store = col1.selectbox("Select Store", stores, index=0)
+product = col2.selectbox("Select Product", products, index=0)
+promo_next_weeks = col3.slider("Promo intensity next 4 weeks (0–3)", 0, 3, 1)
+
+# example: load a trained model (placeholder path)
+# model = tf.keras.models.load_model("model.h5")
+
+# generate a dummy forecast curve (replace with real model.predict)
+np.random.seed(hash(store+product) % (2**32 - 1))
+base = 20 + (hash(product)%17)
+forecast = base * (1 + 0.05*np.arange(4)) * (1 + 0.1*promo_next_weeks) * (1 + 0.1*np.random.randn(4))
+
+st.subheader("4-Week Forecast (units)")
+st.bar_chart(pd.DataFrame({"Week":[1,2,3,4],"Forecast":forecast}).set_index("Week"))
+
+st.subheader("Warehouse Transfer Suggestions")
+# naive heuristic: if forecast > on-hand, propose transfer from nearest surplus store
+on_hand = base * (1 + 0.2*np.random.randn())
+shortfall = np.maximum(0, forecast.sum() - on_hand)
+if shortfall <= 0:
+    st.success("No transfer required. On-hand inventory sufficient.")
+else:
+    donors = pd.DataFrame({
+        "store":[f"Store {i}" for i in range(1, 11)],
+        "surplus": np.maximum(0, base*(1+0.3*np.random.randn(10)) - 15),
+        "distance_km": np.random.uniform(5,120, size=10)
+    })
+    donors = donors.sort_values(["surplus","distance_km"], ascending=[False,True])
+    donors["proposed_transfer"] = np.minimum(donors["surplus"], shortfall).round(0)
+    donors["shortfall_remaining"] = np.maximum(0, shortfall - donors["proposed_transfer"].cumsum())
+    st.dataframe(donors[["store","surplus","distance_km","proposed_transfer","shortfall_remaining"]])
+    st.info(f"Total required transfer: {shortfall:.0f} units")
